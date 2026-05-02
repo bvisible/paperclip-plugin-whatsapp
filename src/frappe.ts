@@ -18,20 +18,30 @@ export async function resolveUserFromPhone(
 ): Promise<FrappeUserResolution | null> {
   const url = `${config.frappeBaseUrl.replace(/\/$/, "")}${FRAPPE_RESOLVE_USER_PATH}`;
 
+  const headers: Record<string, string> = {
+    "X-Relay-Token": config.frappeRelayToken,
+    "Content-Type": "application/json",
+  };
+  // When the plugin talks to Frappe via a non-public URL (e.g. 127.0.0.1:8000
+  // direct gunicorn on the same VM), bench needs an explicit X-Frappe-Site-Name
+  // header to know which site to dispatch the request to.
+  if (config.frappeSiteName) {
+    headers["X-Frappe-Site-Name"] = config.frappeSiteName;
+  }
+
   try {
     const response = await ctx.http.fetch(url, {
       method: "POST",
-      headers: {
-        "X-Relay-Token": config.frappeRelayToken,
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({ phone }),
     });
 
     if (!response.ok) {
+      const bodySnippet = await response.text().catch(() => "");
       ctx.logger.warn("frappe resolve_user failed", {
         phone,
         status: response.status,
+        body: bodySnippet.slice(0, 200),
       });
       return null;
     }
@@ -58,9 +68,11 @@ export async function resolveUserFromPhone(
     }
     return wrap.user;
   } catch (err) {
+    const e = err as Error;
     ctx.logger.error("frappe resolve_user error", {
       phone,
-      err: (err as Error).message,
+      message: e?.message ?? String(err),
+      name: e?.name,
     });
     return null;
   }

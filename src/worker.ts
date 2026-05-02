@@ -50,6 +50,7 @@ async function resolveConfig(ctx: PluginContext): Promise<ResolvedConfig> {
     routerApiKey: await readSecret(raw.routerApiKeyRef),
     webhookSecret: await readSecret(raw.webhookSecretRef),
     frappeBaseUrl: raw.frappeBaseUrl ?? DEFAULT_CONFIG.frappeBaseUrl,
+    frappeSiteName: raw.frappeSiteName ?? "",
     frappeRelayToken: await readSecret(raw.frappeRelayTokenRef),
     transcriptionUrl: raw.transcriptionUrl ?? DEFAULT_CONFIG.transcriptionUrl,
     transcriptionModel:

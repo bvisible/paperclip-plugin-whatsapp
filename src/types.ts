@@ -40,6 +40,7 @@ export interface PluginInstanceConfig {
   routerApiKeyRef?: string;
   webhookSecretRef?: string;
   frappeBaseUrl?: string;
+  frappeSiteName?: string;
   frappeRelayTokenRef?: string;
   transcriptionUrl?: string;
   transcriptionModel?: string;
@@ -55,6 +56,7 @@ export interface ResolvedConfig {
   routerApiKey: string;
   webhookSecret: string;
   frappeBaseUrl: string;
+  frappeSiteName: string;
   frappeRelayToken: string;
   transcriptionUrl: string;
   transcriptionModel: string;

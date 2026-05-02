@@ -62,8 +62,14 @@ const manifest: PaperclipPluginManifestV1 = {
         type: "string",
         title: "Frappe Base URL (this instance)",
         description:
-          "URL of the local Frappe instance (Osiris/DMIS/etc.) — used to resolve phone -> user.",
+          "URL of the local Frappe instance — used to resolve phone -> user. Use http://127.0.0.1:8000 (direct gunicorn) when the plugin runs on the same VM as Frappe; combine with frappeSiteName so bench dispatches to the right site.",
         default: DEFAULT_CONFIG.frappeBaseUrl,
+      },
+      frappeSiteName: {
+        type: "string",
+        title: "Frappe Site Name",
+        description:
+          "Site name passed in the X-Frappe-Site-Name header when calling frappeBaseUrl directly (e.g. prod.local). Required when frappeBaseUrl is not the public domain.",
       },
       frappeRelayTokenRef: {
         type: "string",
