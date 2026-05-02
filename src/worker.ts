@@ -1,5 +1,6 @@
 import {
   definePlugin,
+  runWorker,
   type PluginContext,
   type PluginWebhookInput,
   type ToolResult,
@@ -247,3 +248,8 @@ const plugin = definePlugin({
 });
 
 export default plugin;
+
+// Bind the plugin to the host RPC channel. Required — without this call the
+// worker process exits immediately after module evaluation (code=0) and the
+// host reports `Worker initialize failed`.
+runWorker(plugin, import.meta.url);
