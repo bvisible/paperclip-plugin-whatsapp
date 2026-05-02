@@ -6,8 +6,8 @@ import type { ResolvedConfig } from "./types.js";
  * Send a WhatsApp text message via the central Baileys router (neoservice).
  *
  * The router exposes `POST /api/sendText` with Bearer auth (`ROUTER_API_KEY`).
- * It dispatches to Baileys `sock.sendMessage` for the configured number
- * (+41 79 394 62 40 — central, shared across instances Phase 2-4).
+ * It dispatches to Baileys `sock.sendMessage` for whichever WhatsApp number
+ * the central session is bound to.
  */
 export async function sendWhatsAppText(
   ctx: PluginContext,

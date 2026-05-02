@@ -5,14 +5,15 @@ WhatsApp plugin for Paperclip — talks to a custom Baileys-based router on neos
 ## Overview
 
 ```
-WhatsApp user (+41 79 394 62 40)
+WhatsApp user
   | Baileys WebSocket
   v
-whatsapp-router.service on neoservice (Node + @whiskeysockets/baileys 6.7.16)
+whatsapp-router (Node + @whiskeysockets/baileys 6.7.16) bound to a single
+WhatsApp Business number on a central host.
   | POST /api/plugins/paperclip-plugin-whatsapp/webhooks/inbox
   | (auth: X-Relay-Token = instance_api_key)
   v
-This plugin (Paperclip worker, e.g. on Osiris)
+This plugin (Paperclip worker on the receiving Frappe instance)
   | resolve_user_from_phone (Frappe local)
   | optional: voice transcription via Cohere Transcribe (URL legacy whisper.noraai.ch)
   | create Paperclip Issue, assign agent
