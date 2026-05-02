@@ -12,12 +12,19 @@ export interface RouterWebhookPayload {
   }>;
 }
 
-// Resolution result from `nora.api.whatsapp_config.resolve_user_from_phone`.
+// Resolution result from `nora.api.whatsapp_config.resolve_user`.
+// The Frappe endpoint returns the underlying NORA User Settings record:
+//   { user, email, full_name, language, response_style, tts_enabled, tts_voice }
+// `user` and `email` carry the Frappe user identifier (email-shaped). There is
+// no per-user agent assignment yet — Phase 4 will introduce a mapping.
 export interface FrappeUserResolution {
-  user_email?: string;
-  user_name?: string;
-  agent_id?: string;
-  active?: boolean;
+  user?: string;
+  email?: string;
+  full_name?: string;
+  language?: string;
+  response_style?: string;
+  tts_enabled?: boolean;
+  tts_voice?: string;
 }
 
 // Tool params for whatsapp_send.

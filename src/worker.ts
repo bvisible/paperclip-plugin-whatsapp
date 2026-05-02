@@ -210,24 +210,27 @@ const plugin = definePlugin({
 
     // 2. Resolve user via Frappe local.
     const resolution = await resolveUserFromPhone(ctx, config, body.phone);
-    if (!resolution || !resolution.user_email) {
+    const userEmail = resolution?.email ?? resolution?.user;
+    if (!resolution || !userEmail) {
       ctx.logger.info("phone not registered", { phone: body.phone });
       return;
     }
 
-    const agentId = resolution.agent_id ?? config.fallbackAgentId;
+    // Phase 2 v1 — no per-user agent mapping yet (Phase 4 will introduce one),
+    // every WhatsApp issue lands on the configured fallback agent.
+    const agentId = config.fallbackAgentId;
 
     if (!config.companyId) {
       ctx.logger.error("companyId not configured — cannot create issue");
       throw new Error("company_id_missing");
     }
 
-    const title = buildIssueTitle(resolution.user_name, messageText);
+    const title = buildIssueTitle(resolution.full_name, messageText);
     const description = [
       messageText,
       "",
       `[Source: WhatsApp ${body.phone} — ${body.timestamp}]`,
-      `[User: ${resolution.user_name ?? "?"} <${resolution.user_email}>]`,
+      `[User: ${resolution.full_name ?? "?"} <${userEmail}>]`,
     ].join("\n");
 
     const issue = await ctx.issues.create({

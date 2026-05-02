@@ -47,7 +47,13 @@ export async function resolveUserFromPhone(
     };
 
     const wrap = data.message;
-    if (!wrap || !wrap.success || !wrap.user || !wrap.user.user_email) {
+    if (!wrap || !wrap.success || !wrap.user) {
+      return null;
+    }
+    // The wrapper.user contains {user, email, full_name, ...}. Treat
+    // missing email as "unknown user" (the Frappe endpoint should always
+    // return both, but be defensive).
+    if (!wrap.user.email && !wrap.user.user) {
       return null;
     }
     return wrap.user;
