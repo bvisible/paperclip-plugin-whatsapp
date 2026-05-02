@@ -5,8 +5,9 @@ import type { FrappeUserResolution, ResolvedConfig } from "./types.js";
 /**
  * Resolve a phone number to a Frappe user via the local instance.
  *
- * Calls `nora.api.whatsapp_config.resolve_user_from_phone` (whitelisted
- * `allow_guest=True` since Phase 0). Auth is `X-Relay-Token`.
+ * Calls `nora.api.whatsapp_config.resolve_user` (whitelisted
+ * `allow_guest=True`, validated via X-Relay-Token = NORA Settings
+ * collective_api_key).
  *
  * Returns null when the phone is unknown.
  */
@@ -28,22 +29,30 @@ export async function resolveUserFromPhone(
     });
 
     if (!response.ok) {
-      ctx.logger.warn("frappe resolve_user_from_phone failed", {
+      ctx.logger.warn("frappe resolve_user failed", {
         phone,
         status: response.status,
       });
       return null;
     }
 
+    // The Frappe endpoint returns {"message": {"success": true, "user": {...}}}
+    // or {"message": {"success": false, "error": "..."}}.
     const data = (await response.json()) as {
-      message?: FrappeUserResolution;
+      message?: {
+        success?: boolean;
+        user?: FrappeUserResolution;
+        error?: string;
+      };
     };
-    if (!data.message || !data.message.user_email) {
+
+    const wrap = data.message;
+    if (!wrap || !wrap.success || !wrap.user || !wrap.user.user_email) {
       return null;
     }
-    return data.message;
+    return wrap.user;
   } catch (err) {
-    ctx.logger.error("frappe resolve_user_from_phone error", {
+    ctx.logger.error("frappe resolve_user error", {
       phone,
       err: (err as Error).message,
     });

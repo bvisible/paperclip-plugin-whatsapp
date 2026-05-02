@@ -21,6 +21,6 @@ export const DEFAULT_CONFIG = {
 } as const;
 
 export const FRAPPE_RESOLVE_USER_PATH =
-  "/api/method/nora.api.whatsapp_config.resolve_user_from_phone";
+  "/api/method/nora.api.whatsapp_config.resolve_user";
 
 export const ROUTER_SEND_TEXT_PATH = "/api/sendText";
