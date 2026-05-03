@@ -234,13 +234,20 @@ const plugin = definePlugin({
       `[User: ${resolution.full_name ?? "?"} <${userEmail}>]`,
     ].join("\n");
 
+    // Phase 2.5 — enrich originId so the Hindsight plugin (forked) can extract
+    // the user identity at agent.run.{started,finished} time and pin the bank
+    // to a user-scoped slot when configured. Format is "<phone>::<email>" with
+    // a "::" separator (matching the bank id convention "paperclip::a::b").
+    // When no user resolved, fall back to plain phone.
+    const originId = userEmail ? `${body.phone}::${userEmail}` : body.phone;
+
     const issue = await ctx.issues.create({
       companyId: config.companyId,
       title,
       description,
       assigneeAgentId: agentId,
       originKind: `plugin:${PLUGIN_ID}`,
-      originId: body.phone,
+      originId,
     });
 
     ctx.logger.info("issue created from whatsapp", {
