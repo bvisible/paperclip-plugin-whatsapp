@@ -1,5 +1,8 @@
 import type { PluginContext } from "@paperclipai/plugin-sdk";
-import { FRAPPE_RESOLVE_USER_PATH } from "./constants.js";
+import {
+  FRAPPE_RESOLVE_USER_PATH,
+  FRAPPE_USER_THREAD_APPEND_PATH,
+} from "./constants.js";
 import type { FrappeUserResolution, ResolvedConfig } from "./types.js";
 
 /**
@@ -86,3 +89,65 @@ export async function resolveUserFromPhone(
     return null;
   }
 }
+
+//// Neoffice Modification: whatsapp-cross-channel-user-thread-append
+//// Why: NORA #27 Phase R-V10. After we create a Paperclip issue from an
+////      inbound WhatsApp message, also write the user message into the
+////      Frappe-backed cross-channel cache (nora_v2_user_thread:<canonical_id>)
+////      so that the next Quick Chat / Mobile run can read this WhatsApp
+////      turn from the new issue's description without waiting for
+////      Hindsight retain. The runner mirrors this for the assistant
+////      reply just before sending it back via WhatsApp.
+//// Date: 2026-05-05
+//// Refs: NORA [[27-paperclip-neoffice-embed/README]] Phase R-V10
+export async function appendUserThread(
+  ctx: PluginContext,
+  config: ResolvedConfig,
+  args: {
+    canonicalId: string;
+    role: "user" | "assistant";
+    content: string;
+    channel?: string;
+  },
+): Promise<void> {
+  if (!args.canonicalId || !args.content) return;
+
+  const url = `${config.frappeBaseUrl.replace(/\/$/, "")}${FRAPPE_USER_THREAD_APPEND_PATH}`;
+  const headers: Record<string, string> = {
+    "X-Relay-Token": config.frappeRelayToken,
+    "Content-Type": "application/json",
+  };
+  if (config.frappeSiteName) {
+    headers["X-Frappe-Site-Name"] = config.frappeSiteName;
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        canonical_id: args.canonicalId,
+        role: args.role,
+        content: args.content.slice(0, 4000),
+        channel: args.channel ?? "whatsapp",
+      }),
+    });
+    if (!response.ok) {
+      const bodySnippet = await response.text().catch(() => "");
+      ctx.logger.warn("frappe user_thread_append failed", {
+        canonicalId: args.canonicalId,
+        role: args.role,
+        status: response.status,
+        body: bodySnippet.slice(0, 200),
+      });
+    }
+  } catch (err) {
+    const e = err as Error;
+    ctx.logger.warn("frappe user_thread_append error", {
+      canonicalId: args.canonicalId,
+      role: args.role,
+      message: e?.message ?? String(err),
+    });
+  }
+}
+//// End Neoffice Modification: whatsapp-cross-channel-user-thread-append

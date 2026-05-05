@@ -23,4 +23,14 @@ export const DEFAULT_CONFIG = {
 export const FRAPPE_RESOLVE_USER_PATH =
   "/api/method/nora.api.whatsapp_config.resolve_user";
 
+//// Neoffice Modification: whatsapp-cross-channel-user-thread-append
+//// Why: NORA #27 Phase R-V10. WhatsApp issues bypass Frappe send(), so
+////      they must POST inbound messages to nora.api.v2.chat.user_thread_append
+////      so the cross-channel cache used by Quick Chat / Mobile sees them.
+//// Date: 2026-05-05
+//// Refs: NORA [[27-paperclip-neoffice-embed/README]] Phase R-V10
+export const FRAPPE_USER_THREAD_APPEND_PATH =
+  "/api/method/nora.api.v2.chat.user_thread_append";
+//// End Neoffice Modification: whatsapp-cross-channel-user-thread-append
+
 export const ROUTER_SEND_TEXT_PATH = "/api/sendText";

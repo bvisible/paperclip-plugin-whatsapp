@@ -13,7 +13,7 @@ import {
   TOOL_NAMES,
   WEBHOOK_KEYS,
 } from "./constants.js";
-import { resolveUserFromPhone } from "./frappe.js";
+import { appendUserThread, resolveUserFromPhone } from "./frappe.js";
 import { sendWhatsAppText } from "./router-client.js";
 import { transcribeAudio } from "./transcription.js";
 import type {
@@ -245,6 +245,9 @@ const plugin = definePlugin({
       companyId: config.companyId,
       title,
       description,
+      // `todo` (not the default `backlog`) so the issue is wakeable —
+      // requestWakeup() rejects backlog/done/cancelled.
+      status: "todo",
       assigneeAgentId: agentId,
       originKind: `plugin:${PLUGIN_ID}`,
       originId,
@@ -255,6 +258,47 @@ const plugin = definePlugin({
       phone: body.phone,
       agentId,
     });
+
+    //// Neoffice Modification: whatsapp-cross-channel-user-thread-append
+    //// Why: Phase R-V10 — write the inbound user message into the Frappe
+    ////      cross-channel cache so Quick Chat / Mobile runs see this turn
+    ////      in their next issue description (Phase R-V9 read path).
+    ////      Best-effort: never blocks the wakeup or fails the run.
+    //// Refs: NORA [[27-paperclip-neoffice-embed/README]] Phase R-V10
+    try {
+      await appendUserThread(ctx, config, {
+        canonicalId: userEmail,
+        role: "user",
+        content: messageText,
+        channel: "whatsapp",
+      });
+    } catch (err) {
+      ctx.logger.warn("user_thread_append (user msg) failed (non-fatal)", {
+        issueId: issue.id,
+        error: String(err),
+      });
+    }
+    //// End Neoffice Modification: whatsapp-cross-channel-user-thread-append
+
+    // Wake the assignee agent immediately. Without this the issue sits in
+    // `backlog`/`todo` until the heartbeat scheduler ticks (which can take
+    // a long time), making the user wait for a reply that should land in
+    // a couple of seconds.
+    try {
+      await ctx.issues.requestWakeup(issue.id, config.companyId, {
+        reason: "whatsapp_inbound",
+        contextSource: `plugin:${PLUGIN_ID}`,
+      });
+      ctx.logger.info("wakeup requested for assignee", {
+        issueId: issue.id,
+        agentId,
+      });
+    } catch (err) {
+      ctx.logger.warn("wakeup request failed (non-fatal)", {
+        issueId: issue.id,
+        error: String(err),
+      });
+    }
   },
 });
 
