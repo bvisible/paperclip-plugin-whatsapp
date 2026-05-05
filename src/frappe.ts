@@ -2,6 +2,7 @@ import type { PluginContext } from "@paperclipai/plugin-sdk";
 import {
   FRAPPE_RESOLVE_USER_PATH,
   FRAPPE_USER_THREAD_APPEND_PATH,
+  FRAPPE_USER_THREAD_GET_PATH,
 } from "./constants.js";
 import type { FrappeUserResolution, ResolvedConfig } from "./types.js";
 
@@ -151,3 +152,76 @@ export async function appendUserThread(
   }
 }
 //// End Neoffice Modification: whatsapp-cross-channel-user-thread-append
+
+//// Neoffice Modification: whatsapp-cross-channel-user-thread-read
+//// Why: NORA #27 Phase R-V10 — symmetric with appendUserThread. Before
+////      creating the WhatsApp issue we read the cross-channel cache so
+////      we can inject a markdown history block into the issue description
+////      (just like send_threaded does for Quick Chat / Mobile via Phase
+////      R-V9). The main agent then sees the prior Quick Chat / Mobile /
+////      Raven turns straight from the prompt — no Hindsight dependency.
+//// Date: 2026-05-05
+//// Refs: NORA [[27-paperclip-neoffice-embed/README]] Phase R-V10
+export interface UserThreadMessage {
+  role: "user" | "assistant";
+  content: string;
+  ts?: string;
+  channel?: string;
+}
+
+export async function getUserThread(
+  ctx: PluginContext,
+  config: ResolvedConfig,
+  canonicalId: string,
+): Promise<UserThreadMessage[]> {
+  if (!canonicalId) return [];
+  const url = `${config.frappeBaseUrl.replace(/\/$/, "")}${FRAPPE_USER_THREAD_GET_PATH}`;
+  const headers: Record<string, string> = {
+    "X-Relay-Token": config.frappeRelayToken,
+    "Content-Type": "application/json",
+  };
+  if (config.frappeSiteName) {
+    headers["X-Frappe-Site-Name"] = config.frappeSiteName;
+  }
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ canonical_id: canonicalId }),
+    });
+    if (!response.ok) return [];
+    const data = (await response.json()) as {
+      message?: { canonical_id?: string; messages?: UserThreadMessage[] };
+    };
+    const msgs = data.message?.messages;
+    return Array.isArray(msgs) ? msgs : [];
+  } catch (err) {
+    const e = err as Error;
+    ctx.logger.warn("frappe user_thread_get error", {
+      canonicalId,
+      message: e?.message ?? String(err),
+    });
+    return [];
+  }
+}
+
+const HISTORY_INJECT_LIMIT = 6;
+
+export function formatUserThreadAsBlock(messages: UserThreadMessage[]): string {
+  if (!messages.length) return "";
+  const tail = messages.slice(-HISTORY_INJECT_LIMIT);
+  const lines: string[] = [
+    "## Conversation history (recent messages, oldest first)",
+    "",
+  ];
+  for (const msg of tail) {
+    const content = (msg.content || "").trim();
+    if (!content) continue;
+    const label = msg.role === "user" ? "User" : "Nora";
+    lines.push(`**[${label}]** ${content}`);
+    lines.push("");
+  }
+  lines.push("## Current message");
+  return lines.join("\n");
+}
+//// End Neoffice Modification: whatsapp-cross-channel-user-thread-read

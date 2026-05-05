@@ -31,6 +31,8 @@ export const FRAPPE_RESOLVE_USER_PATH =
 //// Refs: NORA [[27-paperclip-neoffice-embed/README]] Phase R-V10
 export const FRAPPE_USER_THREAD_APPEND_PATH =
   "/api/method/nora.api.v2.chat.user_thread_append";
+export const FRAPPE_USER_THREAD_GET_PATH =
+  "/api/method/nora.api.v2.chat.user_thread_get";
 //// End Neoffice Modification: whatsapp-cross-channel-user-thread-append
 
 export const ROUTER_SEND_TEXT_PATH = "/api/sendText";

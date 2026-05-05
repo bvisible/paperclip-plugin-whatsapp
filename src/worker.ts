@@ -13,7 +13,12 @@ import {
   TOOL_NAMES,
   WEBHOOK_KEYS,
 } from "./constants.js";
-import { appendUserThread, resolveUserFromPhone } from "./frappe.js";
+import {
+  appendUserThread,
+  formatUserThreadAsBlock,
+  getUserThread,
+  resolveUserFromPhone,
+} from "./frappe.js";
 import { sendWhatsAppText } from "./router-client.js";
 import { transcribeAudio } from "./transcription.js";
 import type {
@@ -227,12 +232,35 @@ const plugin = definePlugin({
     }
 
     const title = buildIssueTitle(resolution.full_name, messageText);
-    const description = [
+
+    //// Neoffice Modification: whatsapp-cross-channel-user-thread-read
+    //// Why: NORA #27 Phase R-V10 — read the cross-channel cache and inject
+    ////      a history block into the description so the main agent sees
+    ////      prior Quick Chat / Mobile / Raven turns straight from the
+    ////      prompt. Best-effort: empty cache or fetch error means no block.
+    let historyBlock = "";
+    try {
+      const priorMessages = await getUserThread(ctx, config, userEmail);
+      historyBlock = formatUserThreadAsBlock(priorMessages);
+    } catch (err) {
+      ctx.logger.warn("user_thread_get failed (non-fatal)", {
+        phone: body.phone,
+        error: String(err),
+      });
+    }
+    //// End Neoffice Modification: whatsapp-cross-channel-user-thread-read
+
+    const descriptionParts: string[] = [];
+    if (historyBlock) {
+      descriptionParts.push(historyBlock, "");
+    }
+    descriptionParts.push(
       messageText,
       "",
       `[Source: WhatsApp ${body.phone} — ${body.timestamp}]`,
       `[User: ${resolution.full_name ?? "?"} <${userEmail}>]`,
-    ].join("\n");
+    );
+    const description = descriptionParts.join("\n");
 
     // Phase 2.5 — enrich originId so the Hindsight plugin (forked) can extract
     // the user identity at agent.run.{started,finished} time and pin the bank
