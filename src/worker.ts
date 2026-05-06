@@ -327,6 +327,14 @@ const plugin = definePlugin({
         error: String(err),
       });
     }
+
+    // The webhook reply is built by Paperclip's plugin route handler
+    // (server/src/routes/plugins.ts) which returns
+    // `{ deliveryId, status: "success" }` once this handler resolves
+    // without throwing. The agent runner sends the actual reply async via
+    // the sendText tool — the WhatsApp router is taught to recognise the
+    // queued ack and stay silent (NORA #27 R-V15.3,
+    // //// Neoffice Modification: nora-router-skip-instance-down-on-queued).
   },
 });
 
