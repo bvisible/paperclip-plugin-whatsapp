@@ -238,9 +238,22 @@ const plugin = definePlugin({
     ////      a history block into the description so the main agent sees
     ////      prior Quick Chat / Mobile / Raven turns straight from the
     ////      prompt. Best-effort: empty cache or fetch error means no block.
+    //// R-V15.5 — added a 5s race so a slow Frappe doesn't push the whole
+    ////      handleWebhook RPC past the 30s host timeout (which causes the
+    ////      router to send MSG_INSTANCE_DOWN, then the runner replies
+    ////      async, and the user sees a double message).
     let historyBlock = "";
     try {
-      const priorMessages = await getUserThread(ctx, config, userEmail);
+      const HISTORY_FETCH_TIMEOUT_MS = 5000;
+      const priorMessages = await Promise.race([
+        getUserThread(ctx, config, userEmail),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("user_thread_get timeout 5s")),
+            HISTORY_FETCH_TIMEOUT_MS,
+          ),
+        ),
+      ]);
       historyBlock = formatUserThreadAsBlock(priorMessages);
     } catch (err) {
       ctx.logger.warn("user_thread_get failed (non-fatal)", {
@@ -291,42 +304,44 @@ const plugin = definePlugin({
     //// Why: Phase R-V10 — write the inbound user message into the Frappe
     ////      cross-channel cache so Quick Chat / Mobile runs see this turn
     ////      in their next issue description (Phase R-V9 read path).
-    ////      Best-effort: never blocks the wakeup or fails the run.
-    //// Refs: NORA [[27-paperclip-neoffice-embed/README]] Phase R-V10
-    try {
-      await appendUserThread(ctx, config, {
-        canonicalId: userEmail,
-        role: "user",
-        content: messageText,
-        channel: "whatsapp",
-      });
-    } catch (err) {
+    //// R-V15.5 — fire-and-forget. Was awaited; under a slow Frappe this
+    ////      was the second 30s+ blocker that pushed the whole RPC past
+    ////      the 30s host timeout. The cache write is non-essential to
+    ////      THIS run, only useful for the NEXT cross-channel turn — so
+    ////      we let it land asynchronously and just log on failure.
+    //// Refs: NORA [[27-paperclip-neoffice-embed/README]] Phase R-V10 + R-V15.5
+    void appendUserThread(ctx, config, {
+      canonicalId: userEmail,
+      role: "user",
+      content: messageText,
+      channel: "whatsapp",
+    }).catch((err) => {
       ctx.logger.warn("user_thread_append (user msg) failed (non-fatal)", {
         issueId: issue.id,
         error: String(err),
       });
-    }
+    });
     //// End Neoffice Modification: whatsapp-cross-channel-user-thread-append
 
-    // Wake the assignee agent immediately. Without this the issue sits in
-    // `backlog`/`todo` until the heartbeat scheduler ticks (which can take
-    // a long time), making the user wait for a reply that should land in
-    // a couple of seconds.
-    try {
-      await ctx.issues.requestWakeup(issue.id, config.companyId, {
-        reason: "whatsapp_inbound",
-        contextSource: `plugin:${PLUGIN_ID}`,
-      });
+    //// R-V15.5 — wakeup is fire-and-forget too.
+    //// Was awaited (sub-second on a healthy Paperclip), but on a saturated
+    //// Postgres pool it occasionally pushed the RPC over budget. The agent
+    //// runner picks up the issue from the heartbeat queue regardless of the
+    //// caller awaiting the wakeup; awaiting only buys us the log line.
+    void ctx.issues.requestWakeup(issue.id, config.companyId, {
+      reason: "whatsapp_inbound",
+      contextSource: `plugin:${PLUGIN_ID}`,
+    }).then(() => {
       ctx.logger.info("wakeup requested for assignee", {
         issueId: issue.id,
         agentId,
       });
-    } catch (err) {
+    }).catch((err) => {
       ctx.logger.warn("wakeup request failed (non-fatal)", {
         issueId: issue.id,
         error: String(err),
       });
-    }
+    });
 
     // The webhook reply is built by Paperclip's plugin route handler
     // (server/src/routes/plugins.ts) which returns
