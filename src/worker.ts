@@ -15,6 +15,8 @@ import {
 } from "./constants.js";
 import {
   appendUserThread,
+  createDocumentScan,
+  type DocumentScanCreateResult,
   formatUserThreadAsBlock,
   getUserThread,
   resolveUserFromPhone,
@@ -214,6 +216,52 @@ const plugin = definePlugin({
       }
     }
 
+    //// Neoffice Modification: whatsapp-document-scan-from-media
+    //// Why: NORA #30 R-V15.21 — image/PDF reçus via WhatsApp doivent
+    ////      déclencher la chaîne OCR Document Scan. Avant 2026-05-08 cette
+    ////      branche n'existait pas : le router downloadait l'image/PDF, le
+    ////      plugin reçevait body.files mais ne le lisait QUE pour audio,
+    ////      donc toute facture envoyée par WhatsApp était silencieusement
+    ////      jetée. Ici on traite chaque file image/PDF en parallèle (best-
+    ////      effort, jamais bloquant pour l'issue principale) et on garde
+    ////      la liste des document_scan_name créés pour l'embarquer dans la
+    ////      description de l'issue plus bas.
+    //// Date: 2026-05-08
+    //// Refs: NORA [[30-whatsapp-media-tts/02-phase-image-pdf]]
+    const documentScans: DocumentScanCreateResult[] = [];
+    const SUPPORTED_MEDIA_PREFIXES = ["image/", "application/pdf"];
+    if (!body.is_audio && body.files && body.files.length > 0) {
+      for (const file of body.files) {
+        const supported = SUPPORTED_MEDIA_PREFIXES.some((p) =>
+          (file.mimetype || "").toLowerCase().startsWith(p),
+        );
+        if (!supported) {
+          ctx.logger.info("skipping non-supported media", {
+            phone: body.phone,
+            mimetype: file.mimetype,
+            filename: file.filename,
+          });
+          continue;
+        }
+        const ds = await createDocumentScan(ctx, config, {
+          base64: file.data,
+          filename: file.filename,
+          mimetype: file.mimetype,
+          source: `whatsapp:${body.phone}`,
+        });
+        if (ds) {
+          documentScans.push(ds);
+          ctx.logger.info("document scan enqueued from whatsapp media", {
+            phone: body.phone,
+            fileUrl: ds.fileUrl,
+            filename: ds.filename,
+            sizeBytes: ds.sizeBytes,
+          });
+        }
+      }
+    }
+    //// End Neoffice Modification: whatsapp-document-scan-from-media
+
     // 2. Resolve user via Frappe local.
     const resolution = await resolveUserFromPhone(ctx, config, body.phone);
     const userEmail = resolution?.email ?? resolution?.user;
@@ -268,11 +316,41 @@ const plugin = definePlugin({
       descriptionParts.push(historyBlock, "");
     }
     descriptionParts.push(
-      messageText,
+      messageText || "[no text content]",
       "",
       `[Source: WhatsApp ${body.phone} — ${body.timestamp}]`,
       `[User: ${resolution.full_name ?? "?"} <${userEmail}>]`,
     );
+    //// Neoffice Modification: whatsapp-document-scan-from-media
+    //// Why: NORA #30 R-V15.21 — embed the Document Scan names into the
+    ////      issue description so the OCR agent (or any specialist) sees
+    ////      the attachments straight from the prompt and can poll
+    ////      noraOcrReview/noraOcrAndSuggest on them. The OCR pipeline
+    ////      is already enqueued async in the relay endpoint; the agent
+    ////      just needs to know the scan names.
+    //// Date: 2026-05-08
+    //// Refs: NORA [[30-whatsapp-media-tts/02-phase-image-pdf]]
+    if (documentScans.length > 0) {
+      const lines: string[] = ["", "## Pièces jointes WhatsApp (OCR en cours)"];
+      for (const ds of documentScans) {
+        // We don't have a Document Scan name yet — the relay endpoint
+        // enqueues ocr_process async and the DS is created by
+        // create_document_scan_from_ocr ~10-30 s later. The OCR agent will
+        // see the DS appear in the user's "Pending Action" queue and can
+        // call noraOcrReview once it's there. We surface filename + file_url
+        // so the agent has enough context to identify the file in question
+        // (e.g. when multiple scans are pending for the same supplier).
+        lines.push(
+          `- 📎 \`${ds.filename}\` (${ds.sizeBytes} B) → \`${ds.fileUrl}\``,
+        );
+      }
+      lines.push(
+        "",
+        "Le pipeline OCR + suggestion compte tourne en arrière-plan ; le Document Scan apparaîtra dans la file d'attente Pending Action de Neoffice.",
+      );
+      descriptionParts.push(...lines);
+    }
+    //// End Neoffice Modification: whatsapp-document-scan-from-media
     const description = descriptionParts.join("\n");
 
     // Phase 2.5 — enrich originId so the Hindsight plugin (forked) can extract
@@ -280,7 +358,23 @@ const plugin = definePlugin({
     // to a user-scoped slot when configured. Format is "<phone>::<email>" with
     // a "::" separator (matching the bank id convention "paperclip::a::b").
     // When no user resolved, fall back to plain phone.
-    const originId = userEmail ? `${body.phone}::${userEmail}` : body.phone;
+    //
+    //// Neoffice Modification: whatsapp-voice-flag-in-origin-id
+    //// Why: NORA #30 R-V15.22 — propagate the "user spoke" signal to the
+    ////      runner via the originId suffix `::voice`. The runner parser
+    ////      (parseOriginId in nora-agent-runner-core.mjs) splits on "::"
+    ////      and detects the marker without any schema change. When voice
+    ////      is set, the runner pipes its reply through Voxtral TTS and
+    ////      sends a PTT note via the router /api/sendAudio endpoint, in
+    ////      addition to the text reply (fallback for users who can't
+    ////      listen right away or for whom synth fails).
+    //// Date: 2026-05-08
+    //// Refs: NORA [[30-whatsapp-media-tts/03-phase-tts-reply]]
+    const voiceSuffix = body.is_audio ? "::voice" : "";
+    const originId = userEmail
+      ? `${body.phone}::${userEmail}${voiceSuffix}`
+      : `${body.phone}${voiceSuffix}`;
+    //// End Neoffice Modification: whatsapp-voice-flag-in-origin-id
 
     const issue = await ctx.issues.create({
       companyId: config.companyId,

@@ -1,6 +1,7 @@
 import type { PluginContext } from "@paperclipai/plugin-sdk";
 import {
   FRAPPE_RESOLVE_USER_PATH,
+  FRAPPE_UPLOAD_AND_SCAN_PATH,
   FRAPPE_USER_THREAD_APPEND_PATH,
   FRAPPE_USER_THREAD_GET_PATH,
 } from "./constants.js";
@@ -225,3 +226,98 @@ export function formatUserThreadAsBlock(messages: UserThreadMessage[]): string {
   return lines.join("\n");
 }
 //// End Neoffice Modification: whatsapp-cross-channel-user-thread-read
+
+//// Neoffice Modification: whatsapp-document-scan-from-media
+//// Why: NORA #30 R-V15.21 — image/PDF reçus via WhatsApp doivent
+////      déclencher la chaîne OCR Document Scan (jusqu'ici jetés par le
+////      plugin parce que la branche files était gardée derrière is_audio).
+////      L'endpoint Frappe `nora.api.ocr.upload_and_scan_from_relay` décode
+////      le base64 → File doctype private → Document Scan + enqueue
+////      `ocr_process(create_document_scan=False)` async. Retour synchrone :
+////      le nom du Document Scan que le plugin embarque dans la description
+////      de l'issue (l'agent OCR pollera ensuite via noraOcrReview).
+//// Date: 2026-05-08
+//// Refs: NORA [[30-whatsapp-media-tts/02-phase-image-pdf]]
+export interface DocumentScanCreateResult {
+  fileUrl: string;
+  filename: string;
+  sizeBytes: number;
+  pending: boolean;
+}
+
+export async function createDocumentScan(
+  ctx: PluginContext,
+  config: ResolvedConfig,
+  args: {
+    base64: string;
+    filename: string;
+    mimetype: string;
+    source?: string;
+  },
+): Promise<DocumentScanCreateResult | null> {
+  const url = `${config.frappeBaseUrl.replace(/\/$/, "")}${FRAPPE_UPLOAD_AND_SCAN_PATH}`;
+  const headers: Record<string, string> = {
+    "X-Relay-Token": config.frappeRelayToken,
+    "Content-Type": "application/json",
+  };
+  if (config.frappeSiteName) {
+    headers["X-Frappe-Site-Name"] = config.frappeSiteName;
+  }
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        base64_data: args.base64,
+        filename: args.filename,
+        mimetype: args.mimetype,
+        source: args.source ?? "whatsapp",
+      }),
+      // The endpoint saves the File + enqueues ocr_process async (no wait
+      // on the actual OCR which can take 10-30 s). The synchronous part is
+      // base64 decode + File save + frappe.enqueue (~1 s on a healthy
+      // instance). 20 s timeout = comfortable margin under load.
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) {
+      const bodySnippet = await response.text().catch(() => "");
+      ctx.logger.warn("upload_and_scan_from_relay failed", {
+        filename: args.filename,
+        status: response.status,
+        body: bodySnippet.slice(0, 200),
+      });
+      return null;
+    }
+    const data = (await response.json()) as {
+      message?: {
+        file_url?: string;
+        filename?: string;
+        size_bytes?: number;
+        pending?: boolean;
+      };
+    };
+    const wrap = data.message;
+    const fileUrl = wrap?.file_url;
+    if (!fileUrl) {
+      ctx.logger.warn("upload_and_scan_from_relay returned no file_url", {
+        filename: args.filename,
+      });
+      return null;
+    }
+    return {
+      fileUrl,
+      filename: wrap?.filename || args.filename,
+      sizeBytes: wrap?.size_bytes ?? 0,
+      pending: wrap?.pending ?? true,
+    };
+  } catch (err) {
+    const e = err as Error;
+    ctx.logger.error("upload_and_scan_from_relay error", {
+      filename: args.filename,
+      message: e?.message ?? String(err),
+      name: e?.name,
+    });
+    return null;
+  }
+}
+//// End Neoffice Modification: whatsapp-document-scan-from-media

@@ -35,4 +35,19 @@ export const FRAPPE_USER_THREAD_GET_PATH =
   "/api/method/nora.api.v2.chat.user_thread_get";
 //// End Neoffice Modification: whatsapp-cross-channel-user-thread-append
 
+//// Neoffice Modification: whatsapp-document-scan-from-media
+//// Why: NORA #30 R-V15.21 — image/PDF reçus via WhatsApp doivent
+////      déclencher la chaîne OCR Document Scan (sinon ignorés).
+//// Date: 2026-05-08
+//// Refs: NORA [[30-whatsapp-media-tts/02-phase-image-pdf]]
+export const FRAPPE_UPLOAD_AND_SCAN_PATH =
+  "/api/method/nora.api.ocr.upload_and_scan_from_relay";
+//// End Neoffice Modification: whatsapp-document-scan-from-media
+
 export const ROUTER_SEND_TEXT_PATH = "/api/sendText";
+
+//// Neoffice Modification: nora-router-send-audio
+//// Why: NORA #30 R-V15.22 — vocal-in/vocal-out WhatsApp.
+//// Date: 2026-05-08
+export const ROUTER_SEND_AUDIO_PATH = "/api/sendAudio";
+//// End Neoffice Modification: nora-router-send-audio
